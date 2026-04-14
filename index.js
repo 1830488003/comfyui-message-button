@@ -275,6 +275,58 @@ jQuery(async () => {
         appendDebugLog('WARN', '当前环境未提供 context.saveChat，已跳过聊天落盘调用');
     }
 
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    async function forceSaveViaOfficialEditor(messageIndex, newText) {
+        const scrollContainer = document.querySelector('#chat');
+        const previousScrollTop = scrollContainer ? scrollContainer.scrollTop : null;
+
+        const messageBlock = $(`#chat .mes[mesid="${messageIndex}"]`);
+        if (!messageBlock.length) {
+            appendDebugLog('WARN', `未找到目标楼层，无法触发编辑保存 mesid=${messageIndex}`);
+            return false;
+        }
+
+        const editButton = messageBlock.find('.mes_edit').first();
+        if (!editButton.length) {
+            appendDebugLog('WARN', `未找到编辑按钮，无法触发编辑保存 mesid=${messageIndex}`);
+            return false;
+        }
+
+        editButton.trigger('click');
+        await delay(50);
+
+        const textarea = messageBlock.find('.edit_textarea:visible').first();
+        if (!textarea.length) {
+            appendDebugLog('WARN', `未找到编辑输入框，无法触发编辑保存 mesid=${messageIndex}`);
+            return false;
+        }
+
+        textarea.val(String(newText || ''));
+        const textareaElement = textarea.get(0);
+        if (textareaElement) {
+            textareaElement.dispatchEvent(new Event('input', { bubbles: true }));
+            textareaElement.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        await delay(50);
+
+        const doneButton = messageBlock.find('.mes_edit_done:visible').first();
+        if (!doneButton.length) {
+            appendDebugLog('WARN', `未找到编辑完成按钮，无法触发编辑保存 mesid=${messageIndex}`);
+            return false;
+        }
+
+        doneButton.trigger('click');
+        await delay(120);
+
+        if (scrollContainer && previousScrollTop !== null) {
+            scrollContainer.scrollTop = previousScrollTop;
+        }
+
+        return true;
+    }
+
     async function getChatFileName() {
         if (cachedChatFileName) return cachedChatFileName;
 
@@ -428,7 +480,8 @@ jQuery(async () => {
 
         await saveChatSafe();
         await emitMessageUpdated(messageId);
-        appendDebugLog('INFO', `消息图片注入完成 mesid=${messageId}`);
+        const refreshed = await forceSaveViaOfficialEditor(messageId, message.mes);
+        appendDebugLog('INFO', `消息图片注入完成 mesid=${messageId} 编辑保存触发=${refreshed}`);
         refreshButtons();
     }
 
