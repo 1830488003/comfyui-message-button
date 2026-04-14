@@ -22,6 +22,11 @@ jQuery(async () => {
         outputHeight: '1216',
         upscaleMultiplier: '1',
         resultMode: 'textarea',
+        // 新增模型配置
+        unetModel: '',
+        clipModel: '',
+        vaeModel: '',
+        loraModel: '',
     };
 
     const aiPromptInstruction = `【楼层生图固定输出规则】
@@ -233,6 +238,11 @@ jQuery(async () => {
         $('#cmb-upscale-multiplier').val(String(settings.upscaleMultiplier || '1'));
         $('#cmb-ai-prompt-instruction').val(aiPromptInstruction);
         $('#cmb-result-mode').val(settings.resultMode);
+        // 模型选择
+        $('#cmb-unet-model').val(settings.unetModel);
+        $('#cmb-clip-model').val(settings.clipModel);
+        $('#cmb-vae-model').val(settings.vaeModel);
+        $('#cmb-lora-model').val(settings.loraModel);
         setStatus('就绪');
     }
 
@@ -780,8 +790,53 @@ jQuery(async () => {
         throw new Error('工作流 JSON 格式不支持，请粘贴 ComfyUI 工作流 JSON 或 API prompt JSON');
     }
 
+    /**
+     * 替换工作流中的模型名称
+     * @param {Object} workflow 工作流 prompt graph 对象
+     * @returns {Object} 修改后的工作流
+     */
+    function replaceModelsInWorkflow(workflow) {
+        const newWorkflow = cloneJson(workflow);
+        for (const node of Object.values(newWorkflow)) {
+            if (!node || typeof node !== 'object') continue;
+            const classType = node.class_type;
+            if (classType === 'UNETLoader' && settings.unetModel) {
+                if (Array.isArray(node.inputs?.unet_name)) {
+                    node.inputs.unet_name = [settings.unetModel];
+                } else {
+                    node.inputs.unet_name = settings.unetModel;
+                }
+                appendDebugLog('INFO', `已将 UNET 模型替换为：${settings.unetModel}`);
+            } else if (classType === 'CLIPLoader' && settings.clipModel) {
+                if (Array.isArray(node.inputs?.clip_name)) {
+                    node.inputs.clip_name = [settings.clipModel];
+                } else {
+                    node.inputs.clip_name = settings.clipModel;
+                }
+                appendDebugLog('INFO', `已将 CLIP 模型替换为：${settings.clipModel}`);
+            } else if (classType === 'VAELoader' && settings.vaeModel) {
+                if (Array.isArray(node.inputs?.vae_name)) {
+                    node.inputs.vae_name = [settings.vaeModel];
+                } else {
+                    node.inputs.vae_name = settings.vaeModel;
+                }
+                appendDebugLog('INFO', `已将 VAE 模型替换为：${settings.vaeModel}`);
+            } else if (classType === 'LoraLoader' && settings.loraModel) {
+                if (Array.isArray(node.inputs?.lora_name)) {
+                    node.inputs.lora_name = [settings.loraModel];
+                } else {
+                    node.inputs.lora_name = settings.loraModel;
+                }
+                appendDebugLog('INFO', `已将 LoRA 模型替换为：${settings.loraModel}`);
+            }
+        }
+        return newWorkflow;
+    }
+
     function applyPromptToWorkflow(workflowJson, prompt, seed, filenamePrefix) {
-        const workflow = normalizeWorkflowToPromptGraph(workflowJson);
+        let workflow = normalizeWorkflowToPromptGraph(workflowJson);
+        // 替换模型名称
+        workflow = replaceModelsInWorkflow(workflow);
         let positivePromptApplied = false;
         let samplerApplied = false;
         let saveApplied = false;
@@ -1157,6 +1212,64 @@ jQuery(async () => {
         await generateFromMessage(index, null);
     }
 
+    /**
+     * 从 ComfyUI 获取模型列表（通过官方 /api/sd/comfy/models 接口）
+     */
+    async function loadComfyModels() {
+        try {
+            if (!settings.comfyuiUrl) {
+                return { unet: [], clip: [], vae: [], lora: [] };
+            }
+            const result = await fetch('/api/sd/comfy/models', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(window.getRequestHeaders?.() || {}),
+                },
+                body: JSON.stringify({
+                    url: normalizeBaseUrl(settings.comfyuiUrl),
+                }),
+            });
+            if (!result.ok) {
+                throw new Error(`HTTP ${result.status}`);
+            }
+            const data = await result.json();
+            // 期望返回格式: { unet: [...], clip: [...], vae: [...], lora: [...] }
+            return {
+                unet: Array.isArray(data.unet) ? data.unet : [],
+                clip: Array.isArray(data.clip) ? data.clip : [],
+                vae: Array.isArray(data.vae) ? data.vae : [],
+                lora: Array.isArray(data.lora) ? data.lora : [],
+            };
+        } catch (error) {
+            appendDebugLog('ERROR', `获取模型列表失败：${error.message}`);
+            return { unet: [], clip: [], vae: [], lora: [] };
+        }
+    }
+
+    async function refreshModelSelects() {
+        const models = await loadComfyModels();
+        const $unetSelect = $('#cmb-unet-model');
+        const $clipSelect = $('#cmb-clip-model');
+        const $vaeSelect = $('#cmb-vae-model');
+        const $loraSelect = $('#cmb-lora-model');
+
+        function populateSelect($select, items, currentValue) {
+            $select.empty();
+            $select.append($('<option>').val('').text('(自动检测/留空)'));
+            for (const item of items) {
+                const $opt = $('<option>').val(item).text(item);
+                if (item === currentValue) $opt.prop('selected', true);
+                $select.append($opt);
+            }
+        }
+
+        populateSelect($unetSelect, models.unet, settings.unetModel);
+        populateSelect($clipSelect, models.clip, settings.clipModel);
+        populateSelect($vaeSelect, models.vae, settings.vaeModel);
+        populateSelect($loraSelect, models.lora, settings.loraModel);
+    }
+
     function bindSettingsEvents() {
         $('#cmb-load-workflow-file').on('click', async () => {
             try {
@@ -1212,6 +1325,11 @@ jQuery(async () => {
             settings.outputHeight = String($('#cmb-output-height').val() || '').trim();
             settings.upscaleMultiplier = String($('#cmb-upscale-multiplier').val() || '1').trim();
             settings.resultMode = String($('#cmb-result-mode').val() || 'textarea');
+            // 模型选择
+            settings.unetModel = $('#cmb-unet-model').val();
+            settings.clipModel = $('#cmb-clip-model').val();
+            settings.vaeModel = $('#cmb-vae-model').val();
+            settings.loraModel = $('#cmb-lora-model').val();
             saveSettings();
             refreshButtons();
             setStatus('设置已保存');
@@ -1256,6 +1374,44 @@ jQuery(async () => {
                 showToast('error', '复制失败，请手动复制下方规则文本');
             }
         });
+
+        // 刷新模型列表按钮
+        $('#cmb-refresh-models').on('click', async () => {
+            await refreshModelSelects();
+            showToast('success', '已刷新模型列表');
+        });
+
+        // 导出设置
+        $('#cmb-export-settings').on('click', () => {
+            const exportData = JSON.stringify(settings, null, 2);
+            const blob = new Blob([exportData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `comfyui-message-button-settings-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('success', '设置已导出');
+        });
+
+        // 导入设置
+        $('#cmb-import-settings').on('change', async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            try {
+                const text = await file.text();
+                const imported = JSON.parse(text);
+                Object.assign(settings, imported);
+                saveSettings();
+                loadSettingsToUi();
+                showToast('success', '设置已导入并保存');
+            } catch (error) {
+                logError(error);
+                showToast('error', `导入失败：${error.message}`);
+            }
+            // 清空 input 以便重复导入同一文件
+            $(event.target).val('');
+        });
     }
 
     function bindGlobalEvents() {
@@ -1290,6 +1446,8 @@ jQuery(async () => {
         $('#extensions_settings2').append(settingsHtml);
         loadSettingsToUi();
         bindSettingsEvents();
+        // 加载模型列表
+        await refreshModelSelects();
     }
 
     try {

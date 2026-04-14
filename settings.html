@@ -90,6 +90,48 @@
         </div>
 
         <div class="setting_item">
+            <div class="setting_name">UNET 模型（可选）</div>
+            <div class="setting_value" style="width: 100%;">
+                <select id="cmb-unet-model" class="text_pole"></select>
+                <div class="comfyui-message-button-mini-tip">留空则使用工作流中的默认模型</div>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">CLIP 模型（可选）</div>
+            <div class="setting_value" style="width: 100%;">
+                <select id="cmb-clip-model" class="text_pole"></select>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">VAE 模型（可选）</div>
+            <div class="setting_value" style="width: 100%;">
+                <select id="cmb-vae-model" class="text_pole"></select>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">LoRA 模型（可选）</div>
+            <div class="setting_value" style="width: 100%;">
+                <select id="cmb-lora-model" class="text_pole"></select>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">模型列表管理</div>
+            <div class="setting_value" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button id="cmb-refresh-models" class="menu_button">刷新模型列表</button>
+                <button id="cmb-export-settings" class="menu_button">导出设置</button>
+                <label class="menu_button" style="cursor: pointer;">
+                    导入设置
+                    <input id="cmb-import-settings" type="file" accept=".json" style="display: none;" />
+                </label>
+            </div>
+            <div class="comfyui-message-button-mini-tip">导出/导入所有设置，方便迁移到其他电脑</div>
+        </div>
+
+        <div class="setting_item">
             <div class="setting_name">输出分辨率</div>
             <div class="setting_value" style="width: 100%; display:flex; gap:8px; align-items:center;">
                 <input id="cmb-output-width" class="text_pole" type="text" placeholder="宽，例如 832" />
