@@ -1,0 +1,145 @@
+<div class="inline-drawer comfyui-message-button-settings">
+    <div class="inline-drawer-toggle inline-drawer-header">
+        <b>ComfyUI楼层生图</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+
+    <div class="inline-drawer-content">
+        <div class="comfyui-message-button-tip">
+            这个插件会给 AI 消息楼层右侧加一个生图按钮。点击后会从该楼层提取提示词，调用你本地已经配好的 ComfyUI 工作流，再把结果图片插入酒馆输入框。
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">启用插件</div>
+            <div class="setting_value">
+                <label class="checkbox_label" for="cmb-enabled">
+                    <input id="cmb-enabled" type="checkbox" />
+                    <span>开启楼层生图按钮</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">仅 AI 消息显示按钮</div>
+            <div class="setting_value">
+                <label class="checkbox_label" for="cmb-character-only">
+                    <input id="cmb-character-only" type="checkbox" />
+                    <span>只给 AI / 角色楼层注入按钮</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">自动后台生图</div>
+            <div class="setting_value">
+                <label class="checkbox_label" for="cmb-auto-generate">
+                    <input id="cmb-auto-generate" type="checkbox" />
+                    <span>监视楼层变化，发现最后一条 AI 消息含有 [ImagePrompt|...] 时自动出图并注入</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">ComfyUI 地址</div>
+            <div class="setting_value" style="width: 100%;">
+                <input id="cmb-comfyui-url" class="text_pole" type="text" placeholder="例如：http://127.0.0.1:8189" />
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">提示词提取正则</div>
+            <div class="setting_value" style="width: 100%;">
+                <input id="cmb-prompt-regex" class="text_pole" type="text" placeholder="用于从消息里提取提示词，需包含一个捕获组" />
+                <div class="comfyui-message-button-mini-tip">默认优先支持固定格式：[ImagePrompt|绘图提示词]，也兼容 &lt;ImagePrompt&gt;...&lt;/ImagePrompt&gt;、【绘图提示词】...、绘图提示词: ...</div>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">给 AI 的固定出图规则</div>
+            <div class="setting_value" style="width: 100%;">
+                <textarea id="cmb-ai-prompt-instruction" class="text_pole" rows="12" readonly></textarea>
+                <div class="comfyui-message-button-mini-tip">把这段规则粘到角色卡、系统提示词或世界书里，让 AI 每次正文结尾都自动输出可提取的绘图提示词。</div>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">工作流 JSON</div>
+            <div class="setting_value" style="width: 100%;">
+                <textarea id="cmb-workflow-json" class="text_pole" rows="12" placeholder="把你 ComfyUI 已配置好的工作流 JSON 粘贴到这里"></textarea>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                    <input id="cmb-workflow-file" type="file" accept=".json,.txt,application/json,text/plain" />
+                    <button id="cmb-load-workflow-file" class="menu_button" type="button">读取本地工作流文件</button>
+                </div>
+                <div class="comfyui-message-button-mini-tip">现在支持直接粘贴 ComfyUI 前端保存的 workflow JSON，也兼容 API prompt JSON；也可以上传本地 .json / .txt 文件，插件会读取文件文本填入这里。</div>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">文件名前缀模板</div>
+            <div class="setting_value" style="width: 100%;">
+                <input id="cmb-filename-prefix-template" class="text_pole" type="text" placeholder="例如：st-${timestamp}_${slug}" />
+                <div class="comfyui-message-button-mini-tip">可用变量：${timestamp}、${slug}、${rand}</div>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">固定 Seed（可空）</div>
+            <div class="setting_value" style="width: 100%;">
+                <input id="cmb-fixed-seed" class="text_pole" type="text" placeholder="留空则每次随机" />
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">输出分辨率</div>
+            <div class="setting_value" style="width: 100%; display:flex; gap:8px; align-items:center;">
+                <input id="cmb-output-width" class="text_pole" type="text" placeholder="宽，例如 832" />
+                <span>x</span>
+                <input id="cmb-output-height" class="text_pole" type="text" placeholder="高，例如 1216" />
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">放大倍率</div>
+            <div class="setting_value" style="width: 100%;">
+                <select id="cmb-upscale-multiplier" class="text_pole">
+                    <option value="1">1x（不放大/无放大节点时安全）</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2">2x</option>
+                    <option value="4">4x</option>
+                </select>
+                <div class="comfyui-message-button-mini-tip">仅当工作流里存在 ImageScale 等放大节点时才会自动写入放大后的宽高；如果没有放大节点，将直接跳过，不影响正常出图。</div>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">结果回填方式</div>
+            <div class="setting_value" style="width: 100%;">
+                <select id="cmb-result-mode" class="text_pole">
+                    <option value="textarea">插入当前输入框</option>
+                    <option value="popup">只弹窗预览</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="setting_item" style="gap: 8px; flex-wrap: wrap;">
+            <button id="cmb-save-settings" class="menu_button">保存设置</button>
+            <button id="cmb-refresh-buttons" class="menu_button">刷新楼层按钮</button>
+            <button id="cmb-test-last-message" class="menu_button">测试最后一条 AI 消息</button>
+            <button id="cmb-copy-ai-prompt" class="menu_button">复制 AI 出图规则</button>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">运行状态</div>
+            <div class="setting_value" style="width: 100%;">
+                <div id="cmb-status">就绪</div>
+            </div>
+        </div>
+
+        <div class="setting_item">
+            <div class="setting_name">调试日志</div>
+            <div class="setting_value" style="width: 100%;">
+                <textarea id="cmb-logs" class="text_pole" rows="10" readonly placeholder="这里会显示插件日志"></textarea>
+            </div>
+        </div>
+    </div>
+</div>

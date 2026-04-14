@@ -1,0 +1,60 @@
+.comfyui-message-button-settings .inline-drawer-content {
+    padding: 10px;
+}
+
+.comfyui-message-button-tip {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--SmartThemeBodyColor, #ddd);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.comfyui-message-button-mini-tip {
+    margin-top: 6px;
+    color: #999;
+    font-size: 11px;
+}
+
+.cmb-mes-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    min-height: 28px;
+    margin-left: 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    color: var(--SmartThemeBodyColor, #ddd);
+}
+
+.cmb-mes-button:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.cmb-mes-button.is-loading {
+    color: #f59e0b;
+}
+
+.cmb-mes-button.is-success {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.12);
+}
+
+.cmb-mes-button.is-error {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.12);
+}
+
+#cmb-status {
+    color: var(--SmartThemeBodyColor, #ddd);
+}
+
+body.mobile .cmb-mes-button,
+.touch .cmb-mes-button {
+    min-width: 34px;
+    min-height: 34px;
+}
