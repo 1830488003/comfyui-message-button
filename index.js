@@ -1,3 +1,4 @@
+// @ts-nocheck
 jQuery(async () => {
     'use strict';
 
@@ -271,85 +272,20 @@ jQuery(async () => {
             await context.saveChat();
             return;
         }
-        if (typeof window.saveChatConditional === 'function') {
-            await window.saveChatConditional();
-        }
-    }
-
-    async function tryLoadScriptModule() {
-        try {
-            return await import('../../../script.js');
-        } catch (error) {
-            appendDebugLog('ERROR', `导入官方 script.js 失败=${error.message || error}`);
-            return null;
-        }
-    }
-
-    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-    async function forceSaveViaOfficialEditor(messageIndex, newText) {
-        const scrollContainer = document.querySelector('#chat');
-        const previousScrollTop = scrollContainer ? scrollContainer.scrollTop : null;
-
-        const messageBlock = $(`#chat .mes[mesid="${messageIndex}"]`);
-        if (!messageBlock.length) {
-            return false;
-        }
-
-        const editButton = messageBlock.find('.mes_edit').first();
-        if (!editButton.length) {
-            return false;
-        }
-
-        editButton.trigger('click');
-        await delay(50);
-
-        const textarea = messageBlock.find('.edit_textarea:visible').first();
-        if (!textarea.length) {
-            return false;
-        }
-
-        textarea.val(String(newText || ''));
-        const textareaElement = textarea.get(0);
-        if (textareaElement) {
-            textareaElement.dispatchEvent(new Event('input', { bubbles: true }));
-            textareaElement.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        await delay(50);
-
-        const doneButton = messageBlock.find('.mes_edit_done:visible').first();
-        if (!doneButton.length) {
-            return false;
-        }
-
-        doneButton.trigger('click');
-        await delay(120);
-
-        if (scrollContainer && previousScrollTop !== null) {
-            scrollContainer.scrollTop = previousScrollTop;
-        }
-
-        return true;
+        appendDebugLog('WARN', '当前环境未提供 context.saveChat，已跳过聊天落盘调用');
     }
 
     async function getChatFileName() {
         if (cachedChatFileName) return cachedChatFileName;
 
-        try {
-            if (window.TavernHelper?.triggerSlash) {
-                const chatName = await window.TavernHelper.triggerSlash('/getchatname');
-                if (chatName && typeof chatName === 'string' && chatName.trim() && chatName.trim() !== 'null' && chatName.trim() !== 'undefined') {
-                    cachedChatFileName = chatName.trim();
-                    return cachedChatFileName;
-                }
-            }
-        } catch (error) {
-            appendDebugLog('ERROR', `获取聊天文件名失败=${error.message || error}`);
-        }
-
         const context = contextGetter();
-        const fallback = String(context?.chatId || context?.groupId || 'unknown_chat');
+        const fallback = String(
+            context?.chatId
+            || context?.groupId
+            || context?.name2
+            || context?.characterName
+            || 'unknown_chat'
+        );
         cachedChatFileName = fallback;
         return fallback;
     }
@@ -490,18 +426,9 @@ jQuery(async () => {
             message.swipes[message.swipe_id] = message.mes;
         }
 
-        const scriptModule = await tryLoadScriptModule();
-        if (typeof scriptModule?.syncMesToSwipe === 'function') {
-            scriptModule.syncMesToSwipe(message);
-        }
-        if (typeof scriptModule?.updateMessageBlock === 'function') {
-            scriptModule.updateMessageBlock(Number(messageId), message);
-        }
-
         await saveChatSafe();
         await emitMessageUpdated(messageId);
-        const refreshed = await forceSaveViaOfficialEditor(messageId, message.mes);
-        appendDebugLog('INFO', `官方编辑器刷新结果 mesid=${messageId} refreshed=${refreshed}`);
+        appendDebugLog('INFO', `消息图片注入完成 mesid=${messageId}`);
         refreshButtons();
     }
 
@@ -620,8 +547,21 @@ jQuery(async () => {
         }
     }
 
+    function getActiveWorkflowText() {
+        return String(getActiveWorkflowJsonText() || '').trim();
+    }
+
+    function containsWorkflowTemplatePlaceholders(text) {
+        const raw = String(text || '');
+        return /"%prompt%"|"%negative_prompt%"|"%seed%"|"%steps%"|"%cfg%"|"%width%"|"%height%"/i.test(raw);
+    }
+
     function cloneJson(value) {
         return JSON.parse(JSON.stringify(value));
+    }
+
+    function replaceAllSafe(text, searchValue, replaceValue) {
+        return String(text || '').split(String(searchValue)).join(String(replaceValue));
     }
 
     function getSafePrefix(text, maxLen = 10) {
@@ -746,6 +686,17 @@ jQuery(async () => {
         return promptGraph;
     }
 
+    function isLikelyPositivePromptKey(key) {
+        const text = String(key || '').trim().toLowerCase();
+        if (!text) return false;
+        if (/(negative|neg|uncond)/i.test(text)) return false;
+        return ['text', 'prompt', 'positive', 'positive_prompt'].includes(text);
+    }
+
+    function isLikelyNegativePromptKey(key) {
+        return /(negative|neg|uncond)/i.test(String(key || '').trim());
+    }
+
     function normalizeWorkflowToPromptGraph(workflowJson) {
         const workflow = cloneJson(workflowJson);
 
@@ -765,33 +716,148 @@ jQuery(async () => {
         throw new Error('工作流 JSON 格式不支持，请粘贴 ComfyUI 工作流 JSON 或 API prompt JSON');
     }
 
+    function getWorkflowPortabilityWarnings(workflowJson) {
+        const warnings = [];
+        const workflow = workflowJson && typeof workflowJson === 'object' ? workflowJson : null;
+        const promptGraph = workflow?.prompt && typeof workflow.prompt === 'object'
+            ? workflow.prompt
+            : (workflow && !Array.isArray(workflow?.nodes) ? workflow : null);
+
+        const nodes = Array.isArray(workflow?.nodes)
+            ? workflow.nodes
+            : Object.entries(promptGraph || {}).map(([id, node]) => ({
+                id,
+                type: node?.class_type,
+                inputs: Object.entries(node?.inputs || {}).map(([name, value]) => ({ name, value })),
+            }));
+
+        const customNodeTypes = new Set();
+        const modelRefs = new Set();
+
+        for (const node of (nodes || [])) {
+            const type = String(node?.type || node?.class_type || '').trim();
+            if (!type) continue;
+
+            if (/CacheDiT|Optimizer|Impact|ReActor|ControlNet|IPAdapter|PulID|EasyUse|Inspire|WanVideo|CogVideo|LTXVideo/i.test(type)) {
+                customNodeTypes.add(type);
+            }
+
+            const values = [];
+            if (Array.isArray(node?.widgets_values)) values.push(...node.widgets_values);
+            if (Array.isArray(node?.inputs)) values.push(...node.inputs.map(x => x?.value));
+            if (node?.inputs && !Array.isArray(node.inputs)) values.push(...Object.values(node.inputs));
+
+            for (const value of values) {
+                if (typeof value === 'string' && /\.(?:safetensors|ckpt|pt|pth|bin|gguf)$/i.test(value)) {
+                    modelRefs.add(value);
+                }
+            }
+        }
+
+        if (customNodeTypes.size) {
+            warnings.push(`检测到自定义节点：${Array.from(customNodeTypes).slice(0, 6).join('、')}。别人电脑若未安装同名 custom_nodes，会直接报错。`);
+        }
+
+        if (modelRefs.size) {
+            warnings.push(`检测到工作流引用了具体模型文件：${Array.from(modelRefs).slice(0, 8).join('、')}。别人电脑必须有同名模型文件，否则无法运行。`);
+        }
+
+        if (Array.isArray(workflow?.nodes)) {
+            warnings.push('当前粘贴的是 ComfyUI 前端 workflow JSON。此格式只能做“兼容转换”，复杂工作流在不同电脑上兼容性较差；更推荐使用 API prompt JSON 或带 %prompt% 占位符的官方工作流模板。');
+        }
+
+        return warnings;
+    }
+
+    function buildPromptGraphFromTemplateText(templateText, prompt, seed, filenamePrefix) {
+        const { width, height } = getConfiguredResolution();
+        const upscaled = getUpscaledResolution();
+
+        let workflowText = String(templateText || '');
+        workflowText = replaceAllSafe(workflowText, '"%prompt%"', JSON.stringify(prompt));
+        workflowText = replaceAllSafe(workflowText, '"%negative_prompt%"', JSON.stringify(''));
+        workflowText = replaceAllSafe(workflowText, '"%seed%"', JSON.stringify(seed));
+        workflowText = replaceAllSafe(workflowText, '"%width%"', JSON.stringify(width));
+        workflowText = replaceAllSafe(workflowText, '"%height%"', JSON.stringify(height));
+        workflowText = replaceAllSafe(workflowText, '"%steps%"', JSON.stringify(parseDimension(settings.steps, 20)));
+        workflowText = replaceAllSafe(workflowText, '"%hr_upscale_to_x%"', JSON.stringify(upscaled.width));
+        workflowText = replaceAllSafe(workflowText, '"%hr_upscale_to_y%"', JSON.stringify(upscaled.height));
+        workflowText = replaceAllSafe(workflowText, '"%filename_prefix%"', JSON.stringify(filenamePrefix));
+
+        let parsed;
+        try {
+            parsed = JSON.parse(workflowText);
+        } catch (error) {
+            throw new Error(`工作流模板替换后解析失败：${error.message}`);
+        }
+
+        return normalizeWorkflowToPromptGraph(parsed);
+    }
+
+    function prepareWorkflowForSubmission(prompt, seed, filenamePrefix) {
+        const rawText = getActiveWorkflowText();
+        if (!rawText) {
+            throw new Error('工作流为空，请先在设置中填写工作流 JSON');
+        }
+
+        if (containsWorkflowTemplatePlaceholders(rawText)) {
+            appendDebugLog('INFO', '检测到官方工作流模板占位符，将按模板替换后提交');
+            const parsedTemplate = JSON.parse(rawText);
+            const warnings = getWorkflowPortabilityWarnings(parsedTemplate);
+            warnings.forEach(warning => appendDebugLog('WARN', warning));
+            return buildPromptGraphFromTemplateText(rawText, prompt, seed, filenamePrefix);
+        }
+
+        const parsedWorkflow = parseWorkflowJson();
+        const warnings = getWorkflowPortabilityWarnings(parsedWorkflow);
+        warnings.forEach(warning => appendDebugLog('WARN', warning));
+        return applyPromptToWorkflow(parsedWorkflow, prompt, seed, filenamePrefix);
+    }
+
     function applyPromptToWorkflow(workflowJson, prompt, seed, filenamePrefix) {
         const workflow = normalizeWorkflowToPromptGraph(workflowJson);
         let positivePromptApplied = false;
         let samplerApplied = false;
+        let stepsApplied = false;
         let saveApplied = false;
         let baseResolutionApplied = false;
         let upscaleResolutionApplied = false;
         const { width, height } = getConfiguredResolution();
         const upscaled = getUpscaledResolution();
+        const steps = parseDimension(settings.steps, 20);
 
         for (const node of Object.values(workflow)) {
             if (!node || typeof node !== 'object') continue;
             node.inputs = node.inputs || {};
 
-            if (node.class_type === 'CLIPTextEncode') {
-                const existingText = String(node.inputs.text || '').trim();
-                if (!existingText) {
+            for (const inputName of Object.keys(node.inputs || {})) {
+                if (isLikelyPositivePromptKey(inputName)) {
+                    const currentValue = node.inputs[inputName];
+                    if (typeof currentValue === 'string' || currentValue == null) {
+                        node.inputs[inputName] = prompt;
+                        positivePromptApplied = true;
+                    }
+                }
+
+                if (isLikelyNegativePromptKey(inputName)) {
+                    // 保留工作流自己的负面提示词，不主动覆盖
                     continue;
                 }
-                node.inputs.text = prompt;
-                positivePromptApplied = true;
-            } else if (node.class_type === 'KSampler') {
-                node.inputs.seed = seed;
-                samplerApplied = true;
-            } else if (node.class_type === 'SaveImage') {
-                node.inputs.filename_prefix = filenamePrefix;
-                saveApplied = true;
+
+                if (inputName === 'seed' && (typeof node.inputs[inputName] === 'number' || typeof node.inputs[inputName] === 'string' || node.inputs[inputName] == null)) {
+                    node.inputs[inputName] = seed;
+                    samplerApplied = true;
+                }
+
+                if (inputName === 'steps' && (typeof node.inputs[inputName] === 'number' || typeof node.inputs[inputName] === 'string' || node.inputs[inputName] == null)) {
+                    node.inputs[inputName] = steps;
+                    stepsApplied = true;
+                }
+
+                if (inputName === 'filename_prefix' && (typeof node.inputs[inputName] === 'string' || node.inputs[inputName] == null)) {
+                    node.inputs[inputName] = filenamePrefix;
+                    saveApplied = true;
+                }
             }
 
             const isUpscaleNode = ['ImageScale', 'ImageScaleBy', 'UpscaleImageBy', 'ImageUpscaleWithModel'].includes(String(node.class_type || ''));
@@ -818,8 +884,10 @@ jQuery(async () => {
 
         if (!positivePromptApplied) {
             for (const node of Object.values(workflow)) {
-                if (node?.class_type === 'CLIPTextEncode') {
-                    node.inputs = node.inputs || {};
+                if (!node || typeof node !== 'object') continue;
+                node.inputs = node.inputs || {};
+
+                if (typeof node.inputs.text === 'string' || node.inputs.text == null) {
                     node.inputs.text = prompt;
                     positivePromptApplied = true;
                     break;
@@ -827,11 +895,23 @@ jQuery(async () => {
             }
         }
 
-        if (!positivePromptApplied) throw new Error('工作流里没有找到可写入正面提示词的 CLIPTextEncode 节点');
-        if (!samplerApplied) throw new Error('工作流里没有找到 KSampler 节点');
-        if (!saveApplied) throw new Error('工作流里没有找到 SaveImage 节点');
+        if (!positivePromptApplied) {
+            appendDebugLog('WARN', '未找到可识别的提示词输入字段，已保留工作流默认提示词');
+        }
+        if (!samplerApplied) {
+            appendDebugLog('WARN', '未找到可写入 seed 的节点，已保留工作流默认 seed');
+        }
+        if (!stepsApplied) {
+            appendDebugLog('WARN', '未找到可写入步数的节点，已保留工作流默认 steps');
+        }
+        if (!saveApplied) {
+            appendDebugLog('WARN', '未找到 filename_prefix 输入，已保留工作流默认保存前缀');
+        }
 
         appendDebugLog('INFO', `基础分辨率=${width}x${height}，放大倍率=${upscaled.multiplier}，放大分辨率=${upscaled.width}x${upscaled.height}`);
+        if (!baseResolutionApplied) {
+            appendDebugLog('WARN', '未找到可识别的基础分辨率节点，已保留工作流默认宽高');
+        }
         if (!upscaleResolutionApplied) {
             appendDebugLog('INFO', '工作流中未找到可识别的放大节点，已自动跳过放大分辨率注入');
         }
@@ -1043,21 +1123,25 @@ jQuery(async () => {
 
         const seed = generateSeed();
         const filenamePrefix = renderFilenamePrefix(prompt);
-        const workflow = applyPromptToWorkflow(parseWorkflowJson(), prompt, seed, filenamePrefix);
+        const workflow = prepareWorkflowForSubmission(prompt, seed, filenamePrefix);
         const data = await generateViaStComfyBackend(baseUrl, workflow);
         appendDebugLog('INFO', `seed=${seed} filename_prefix=${filenamePrefix}`);
         return { baseUrl: data.usedBaseUrl || baseUrl, seed, filenamePrefix, imageFormat: data.format || 'png', imageBase64: data.data };
     }
 
     async function handleImageResult(imageUrl, prompt, messageId) {
-        if (settings.resultMode === 'popup' && typeof window.SillyTavern?.callGenericPopup === 'function') {
-            const html = `
-                <div style="display:flex;flex-direction:column;gap:10px;max-width:100%;">
-                    <div style="color:#ccc;font-size:12px;word-break:break-all;">提示词：${$('<div>').text(prompt).html()}</div>
-                    <img src="${imageUrl}" alt="ComfyUI result" style="max-width:100%;border-radius:8px;" />
-                    <div style="font-size:12px;color:#999;word-break:break-all;">${imageUrl}</div>
-                </div>`;
-            await window.SillyTavern.callGenericPopup(html, 1, { wide: true, large: true });
+        if (settings.resultMode === 'popup') {
+            try {
+                const previewWindow = window.open(imageUrl, '_blank', 'noopener,noreferrer');
+                if (!previewWindow) {
+                    throw new Error('浏览器拦截了预览窗口');
+                }
+                showToast('success', '图片已在新窗口打开预览');
+            } catch (error) {
+                appendDebugLog('WARN', `弹窗预览失败，改为注入楼层: ${error?.message || error}`);
+                await injectImageToMessage(messageId, imageUrl, prompt);
+                showToast('success', `图片已注入到楼层 ${messageId}`);
+            }
             return;
         }
 
@@ -1076,33 +1160,36 @@ jQuery(async () => {
         const prompt = extractImagePrompt(message.mes);
         const truncatedPrompt = prompt.length > 100 ? prompt.slice(0, 100) + '...' : prompt;
         log(`楼层 ${messageId} 提取到提示词：`, truncatedPrompt);
-        
+
         const originalFixedSeed = settings.fixedSeed;
         if (options.regenerate) {
             settings.fixedSeed = '';
         }
+        try {
+            if ($button) {
+                setButtonState($button, 'is-loading', '正在提交 ComfyUI 任务');
+            }
+            setStatus(`楼层 ${messageId}：正在通过酒馆后端提交 ComfyUI 任务`);
 
-        if ($button) {
-            setButtonState($button, 'is-loading', '正在提交 ComfyUI 任务');
+            const { seed, filenamePrefix, imageFormat, imageBase64 } = await queuePromptToComfy(prompt);
+            if (requestId !== activeRequestId) {
+                throw new Error('当前请求已被新的生成任务替代');
+            }
+
+            setStatus(`楼层 ${messageId}：出图完成，正在保存到酒馆（seed=${seed}）`);
+            const imageUrl = await saveBase64ImageToSt(imageBase64, imageFormat, prompt);
+            await handleImageResult(imageUrl, prompt, messageId);
+
+            if ($button) {
+                setButtonState($button, 'is-success', '出图成功，点击可再次生成');
+                setTimeout(() => setButtonState($button, '', '用这层提示词调用 ComfyUI 生图'), 2500);
+            }
+
+            setStatus(`楼层 ${messageId}：出图完成`);
+            log(`楼层 ${messageId} 出图成功：`, imageUrl, `prefix=${filenamePrefix}`, `seed=${seed}`);
+        } finally {
+            settings.fixedSeed = originalFixedSeed;
         }
-        setStatus(`楼层 ${messageId}：正在通过酒馆后端提交 ComfyUI 任务`);
-
-        const { seed, filenamePrefix, imageFormat, imageBase64 } = await queuePromptToComfy(prompt);
-        if (requestId !== activeRequestId) {
-            throw new Error('当前请求已被新的生成任务替代');
-        }
-
-        setStatus(`楼层 ${messageId}：出图完成，正在保存到酒馆（seed=${seed}）`);
-        const imageUrl = await saveBase64ImageToSt(imageBase64, imageFormat, prompt);
-        await handleImageResult(imageUrl, prompt, messageId);
-
-        if ($button) {
-            setButtonState($button, 'is-success', '出图成功，点击可再次生成');
-            setTimeout(() => setButtonState($button, '', '用这层提示词调用 ComfyUI 生图'), 2500);
-        }
-
-        setStatus(`楼层 ${messageId}：出图完成`);
-        log(`楼层 ${messageId} 出图成功：`, imageUrl, `prefix=${filenamePrefix}`, `seed=${seed}`);
     }
 
     async function onRegenerateButtonClick(event) {
@@ -1257,8 +1344,13 @@ jQuery(async () => {
             const a = document.createElement('a');
             a.href = url;
             a.download = `comfyui-message-button-settings-${Date.now()}.json`;
+            a.style.display = 'none';
+            document.body.appendChild(a);
             a.click();
-            URL.revokeObjectURL(url);
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                a.remove();
+            }, 1000);
             showToast('success', '设置已导出');
         });
 

@@ -70,7 +70,7 @@
                     <input id="cmb-workflow-file" type="file" accept=".json,.txt,application/json,text/plain" />
                     <button id="cmb-load-workflow-file" class="menu_button" type="button">读取本地工作流文件</button>
                 </div>
-                <div class="comfyui-message-button-mini-tip">现在支持直接粘贴 ComfyUI 前端保存的 workflow JSON，也兼容 API prompt JSON；也可以上传本地 .json / .txt 文件，插件会读取文件文本填入这里。</div>
+                <div class="comfyui-message-button-mini-tip">支持三种格式：1）ComfyUI API prompt JSON；2）带 %prompt% 等占位符的官方工作流模板；3）前端保存的 workflow JSON（仅兼容转换，复杂/自定义节点工作流在别的电脑上可能失败，最稳妥仍是前两种）。</div>
             </div>
         </div>
 
