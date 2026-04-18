@@ -18,7 +18,9 @@
     font-size: 11px;
 }
 
-.cmb-mes-button {
+.cmb-mes-button,
+.cmb-random-button,
+.cmb-optimize-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -31,20 +33,28 @@
     color: var(--SmartThemeBodyColor, #ddd);
 }
 
-.cmb-mes-button:hover {
+.cmb-mes-button:hover,
+.cmb-random-button:hover,
+.cmb-optimize-button:hover {
     background: rgba(255, 255, 255, 0.08);
 }
 
-.cmb-mes-button.is-loading {
+.cmb-mes-button.is-loading,
+.cmb-random-button.is-loading,
+.cmb-optimize-button.is-loading {
     color: #f59e0b;
 }
 
-.cmb-mes-button.is-success {
+.cmb-mes-button.is-success,
+.cmb-random-button.is-success,
+.cmb-optimize-button.is-success {
     color: #22c55e;
     background: rgba(34, 197, 94, 0.12);
 }
 
-.cmb-mes-button.is-error {
+.cmb-mes-button.is-error,
+.cmb-random-button.is-error,
+.cmb-optimize-button.is-error {
     color: #ef4444;
     background: rgba(239, 68, 68, 0.12);
 }
@@ -54,7 +64,11 @@
 }
 
 body.mobile .cmb-mes-button,
-.touch .cmb-mes-button {
+body.mobile .cmb-random-button,
+body.mobile .cmb-optimize-button,
+.touch .cmb-mes-button,
+.touch .cmb-random-button,
+.touch .cmb-optimize-button {
     min-width: 34px;
     min-height: 34px;
 }

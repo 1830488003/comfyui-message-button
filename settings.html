@@ -90,6 +90,14 @@
         </div>
 
         <div class="setting_item">
+            <div class="setting_name">生成步数（可空）</div>
+            <div class="setting_value" style="width: 100%;">
+                <input id="cmb-steps" class="text_pole" type="text" placeholder="留空则保留工作流原始步数，例如 6" />
+                <div class="comfyui-message-button-mini-tip">如果这里留空，插件不会再强行把工作流步数改成 20；只有填写后，才会覆盖工作流里的 steps。</div>
+            </div>
+        </div>
+
+        <div class="setting_item">
             <div class="setting_name">设置迁移</div>
             <div class="setting_value" style="display: flex; gap: 8px; flex-wrap: wrap;">
                 <button id="cmb-export-settings" class="menu_button">导出设置</button>

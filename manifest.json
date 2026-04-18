@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Cline",
-    "version": "0.2.2",
+    "version": "0.2.4",
     "homePage": "http://127.0.0.1:8188",
     "description": "给 AI 消息楼层注入 ComfyUI 生图按钮，提取提示词后直接调用本地工作流"
 }
